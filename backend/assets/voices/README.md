@@ -24,6 +24,7 @@ S2 Pro clones a voice from a short reference recording — each preset in
 
 The cloned voice inherits timbre, style, and accent from the clip, so record in
 the language you want the output in. Only use voices you have the right to use.
+See [LANGUAGES.md](LANGUAGES.md) for adding your voice in another language.
 
 ## Bundled defaults
 

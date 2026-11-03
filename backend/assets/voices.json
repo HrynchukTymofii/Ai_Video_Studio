@@ -26,5 +26,12 @@
     "language": "en",
     "ref_audio": "voices/john_en.wav",
     "ref_text": "The future is closer than ever. Artificial intelligence is transforming the way we create, work, and live. Every breakthrough opens new possibilities, from intelligent robots and autonomous machines to immersive virtual worlds and clean energy solutions. Technology is changing faster than ever before, and the innovations we build today will shape the lives of future generations."
+  },
+  {
+    "id": "tim-uk",
+    "name": "Tim (Ukrainian)",
+    "language": "uk",
+    "ref_audio": "voices/tim_uk.wav",
+    "ref_text": "Вітаю, шановний водію! Ви на каналі ПДР тести — де ми розглядаємо цікаві ситуації, що можуть трапитися на дорогах та пригадуємо правила дорожнього руху. Сьогодні маємо дві ситуації: перша про парковку та друга про обгін. Уважно послухайте умову, оцініть ситуацію — та перевірте свої знання з правил дорожнього руху. А тепер поїхали!"
   }
 ]
