@@ -121,13 +121,14 @@ def parse_full_video_script(script: str) -> list[ScriptSegment]:
                 raise InputValidationError(
                     f"invalid clip name {value!r} — use the uploaded file's name only"
                 )
-        elif arg is not None:
+        elif arg is not None and keyword != "PAUSE":
             raise InputValidationError(
                 f"unknown visual marker {token} — {_SUPPORTED};"
                 f" voice tags must not contain a colon"
             )
         else:
-            # Voice tag ([short pause], [excited], ...): keep it in the narration.
+            # Voice tag ([short pause], [excited], ...) or timed [pause:2]
+            # (handled by the S2 pipeline): keep it in the narration.
             pieces.append(script[pos : match.end()])
             pos = match.end()
             continue

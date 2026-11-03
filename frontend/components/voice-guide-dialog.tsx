@@ -14,31 +14,87 @@ import {
 const AI_PROMPT = `Write a voice-over narration script about [TOPIC], about [DURATION] long when read aloud at a natural pace (~150 words per minute).
 
 Rules for the script:
-- Plain spoken text only — no headings, no stage directions, no markdown, no emojis.
+- Plain spoken text only — no headings, no stage directions outside tags, no markdown, no emojis.
 - Short sentences. One idea per sentence. Conversational, like talking to one person.
 - Write out every number, unit, date and abbreviation the way it should be spoken ("twenty five percent", not "25%").
 - End sentences with normal punctuation. Use commas for short pauses and "..." for a hesitation.
-- You may insert [pause] for a beat of silence, or [pause:2] for a two-second silence, between thoughts.
+- Direct the delivery with inline square-bracket voice tags; each tag affects the speech after it. Available: [short pause], [long pause], [breath], [sigh], [emphasis], [excited], [slightly excited], [sad], [surprised], [calm], [whisper], [low voice], [volume up], [laughing], [chuckle], or a short free-form description like [professional broadcast tone].
+- Use [pause] for a beat of exact silence, or [pause:2] for two seconds.
+- Set the overall tone with one tag at the very start, then use at most 2–3 tags per paragraph. Never put a tag mid-word, and never put a colon inside a tag other than [pause:N].
 - No intro like "Here's the script" — output the narration text only.`;
 
-/** The marks the narration engine actually honors. [pause] markers are cut out
- * of the text and replaced with real silence; punctuation drives the delivery
- * of everything else. */
-const PACING_MARKS: { mark: string; effect: string }[] = [
-  { mark: "[pause]", effect: "a beat of silence (0.6 s) — the marker is never spoken" },
+type Mark = { mark: string; effect: string };
+
+/** Silence the app inserts itself: [pause] markers are cut out of the text and
+ * replaced with exact silence, so they always work. */
+const PACING_MARKS: Mark[] = [
+  { mark: "[pause]", effect: "exact beat of silence (0.6 s) — never spoken" },
   { mark: "[pause:2]", effect: "exactly that many seconds of silence (up to 10)" },
   { mark: ",", effect: "short pause inside a sentence" },
-  { mark: ". ! ?", effect: "full stop — ends the phrase with matching intonation" },
+  { mark: ". ! ?", effect: "ends the phrase with matching intonation" },
   { mark: "…", effect: "hesitation / trailing off" },
-  { mark: "New sentence", effect: "a brief natural gap between sentence groups" },
 ];
 
-const TONE_MARKS: { mark: string; effect: string }[] = [
-  { mark: "(excited)", effect: "brighter, faster delivery of the following text" },
-  { mark: "(sad)", effect: "slower, lower delivery" },
-  { mark: "(whispering)", effect: "hushed delivery" },
-  { mark: "(laughing)", effect: "adds a laugh" },
+/** Tags interpreted by the S2 Pro voice model. Open vocabulary: these are
+ * common examples, not an exhaustive list. */
+const TAG_GROUPS: { title: string; marks: Mark[] }[] = [
+  {
+    title: "Breath & natural pauses",
+    marks: [
+      { mark: "[short pause]", effect: "a natural, brief breath-pause" },
+      { mark: "[long pause]", effect: "a longer, dramatic pause" },
+      { mark: "[breath]", effect: "an audible breath" },
+      { mark: "[inhale]", effect: "a sharp intake of breath" },
+      { mark: "[sigh]", effect: "a sigh before the next words" },
+    ],
+  },
+  {
+    title: "Emotion",
+    marks: [
+      { mark: "[excited]", effect: "brighter, more energetic delivery" },
+      { mark: "[sad]", effect: "slower, lower, softer delivery" },
+      { mark: "[angry]", effect: "harder, more forceful delivery" },
+      { mark: "[surprised]", effect: "raised, reactive intonation" },
+      { mark: "[calm]", effect: "relaxed, even delivery" },
+      { mark: "[slightly …] / [very …]", effect: "dial intensity, e.g. [slightly sad], [very excited]" },
+    ],
+  },
+  {
+    title: "Delivery",
+    marks: [
+      { mark: "[emphasis]", effect: "stresses the words that follow" },
+      { mark: "[whisper]", effect: "hushed, whispered voice" },
+      { mark: "[low voice]", effect: "quieter, lower register" },
+      { mark: "[volume up]", effect: "louder, projected voice" },
+      { mark: "[laughing]", effect: "speaks through a laugh" },
+      { mark: "[chuckle]", effect: "a short chuckle" },
+    ],
+  },
+  {
+    title: "Free-form",
+    marks: [
+      { mark: "[professional broadcast tone]", effect: "describe any style in a few words" },
+      { mark: "[speaking slowly and warmly]", effect: "pace + warmth in one tag" },
+      { mark: "[pitch up]", effect: "higher pitch for the following text" },
+    ],
+  },
 ];
+
+function MarkTable({ rows }: { rows: Mark[] }) {
+  return (
+    <div className="overflow-hidden rounded-xl border">
+      {rows.map((row) => (
+        <div
+          key={row.mark}
+          className="flex items-start gap-4 border-b px-4 py-2.5 text-sm last:border-b-0"
+        >
+          <code className="w-44 shrink-0 font-mono text-xs text-primary">{row.mark}</code>
+          <span className="text-foreground/85">{row.effect}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function VoiceGuideDialog() {
   const [copied, setCopied] = useState(false);
@@ -68,8 +124,8 @@ export function VoiceGuideDialog() {
           <div className="pr-6">
             <DialogTitle>Writing a great narration script</DialogTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              The voice clone reads your script exactly as written — punctuation
-              is how you direct it.
+              Punctuation sets the pacing; square-bracket tags direct the
+              emotion and delivery.
             </p>
           </div>
 
@@ -77,41 +133,29 @@ export function VoiceGuideDialog() {
             <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               Pacing marks
             </h3>
-            <div className="overflow-hidden rounded-xl border">
-              {PACING_MARKS.map((row) => (
-                <div
-                  key={row.mark}
-                  className="flex items-start gap-4 border-b px-4 py-2.5 text-sm last:border-b-0"
-                >
-                  <code className="w-28 shrink-0 font-mono text-xs text-primary">
-                    {row.mark}
-                  </code>
-                  <span className="text-foreground/85">{row.effect}</span>
-                </div>
-              ))}
-            </div>
+            <MarkTable rows={PACING_MARKS} />
           </section>
 
-          <section className="space-y-2">
+          <section className="space-y-3">
             <h3 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              Tone markers <span className="normal-case">· experimental</span>
+              Voice tags <span className="normal-case">· interpreted by the model</span>
             </h3>
             <p className="text-xs text-muted-foreground">
-              Put a marker in parentheses right before the text it should color.
-              Results vary by voice — generate a short test first.
+              Put a tag in <strong>square brackets</strong> right before the text it should
+              color — it lasts until the delivery changes again. The vocabulary is open: any
+              short description works, these are just reliable starting points. Use 2–3 per
+              paragraph at most; results vary by voice, so test a short line first.
             </p>
-            <div className="overflow-hidden rounded-xl border">
-              {TONE_MARKS.map((row) => (
-                <div
-                  key={row.mark}
-                  className="flex items-start gap-4 border-b px-4 py-2.5 text-sm last:border-b-0"
-                >
-                  <code className="w-28 shrink-0 font-mono text-xs text-primary">
-                    {row.mark}
-                  </code>
-                  <span className="text-foreground/85">{row.effect}</span>
-                </div>
-              ))}
+            {TAG_GROUPS.map((group) => (
+              <div key={group.title} className="space-y-1.5">
+                <p className="text-xs font-medium text-foreground/70">{group.title}</p>
+                <MarkTable rows={group.marks} />
+              </div>
+            ))}
+            <div className="rounded-xl bg-secondary/50 p-3 font-mono text-xs leading-relaxed text-foreground/85">
+              [professional broadcast tone] The future is closer than ever. [short pause] Every
+              breakthrough opens new possibilities… [emphasis] and what we build today will
+              shape the next generation. [pause:1] [slightly excited] So let&apos;s begin.
             </div>
           </section>
 

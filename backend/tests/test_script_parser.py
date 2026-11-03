@@ -164,3 +164,9 @@ def test_unclosed_marker_is_caught() -> None:
 def test_clip_name_path_traversal_is_rejected(name: str) -> None:
     with pytest.raises(InputValidationError, match="invalid clip name"):
         parse_full_video_script(f"Intro. [CLIP: {name}] Text.")
+
+
+def test_timed_pause_marker_stays_in_narration():
+    segments = parse_full_video_script("Hello there. [pause:2] [BROLL: city] More text.")
+    assert segments[0].text == "Hello there. [pause:2]"
+    assert segments[1].text == "More text."

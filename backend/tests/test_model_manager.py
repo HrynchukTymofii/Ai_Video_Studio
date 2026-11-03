@@ -176,6 +176,46 @@ async def test_insufficient_vram_raises_clear_error() -> None:
             pass
 
 
+class LeakyGPU(FakeGPU):
+    """Resident pipelines use `extra_gb` more than their estimate (e.g. a KV cache
+    the estimate doesn't cover), released only when they leave the GPU."""
+
+    def __init__(self, total_gb: float, pipelines: list[ManagedPipeline], extra_gb: float) -> None:
+        super().__init__(total_gb, pipelines)
+        self.extra_gb = extra_gb
+
+    def free_gb(self) -> float:
+        resident = [p for p in self.pipelines if p.state is PipelineState.ON_GPU]
+        return super().free_gb() - self.extra_gb * len(resident)
+
+
+@pytest.mark.parametrize("policy", ["cpu", "unload"])
+async def test_resident_target_over_estimate_self_evicts_instead_of_failing(policy: str) -> None:
+    # 22 GB card (L4-class): s2 fits on first acquire, but once resident it holds
+    # 8 GB more than estimated, so the second acquire lacks activation headroom
+    # with nothing else to evict. It must recover, not fail until a restart.
+    s2 = DummyPipeline("s2", 10, 13, policy=policy)
+    gpu = LeakyGPU(22, [s2], extra_gb=8)
+    manager = ModelManager(
+        [s2], vram_reserve_gb=2.0, vram_probe=gpu.free_gb, clear_cuda_cache=gpu.clear_cache
+    )
+    for _ in range(3):
+        async with manager.acquire("s2") as pipe:
+            assert pipe.state is PipelineState.ON_GPU
+    assert s2.calls.count("to_gpu") == 3
+    if policy == "unload":
+        assert s2.calls.count("load") == 3
+
+
+async def test_after_job_failure_insufficient_vram_offloads_everything() -> None:
+    s2 = DummyPipeline("s2", 10, 12)
+    manager, _ = build(48, s2)
+    async with manager.acquire("s2"):
+        pass
+    await manager.after_job_failure(InsufficientVRAMError("no room"))
+    assert s2.state is PipelineState.ON_CPU
+
+
 async def test_unknown_pipeline_name() -> None:
     manager, _ = build(48, DummyPipeline("s2", 10, 12))
     with pytest.raises(KeyError, match="nope"):

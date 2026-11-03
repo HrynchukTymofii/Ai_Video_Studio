@@ -87,14 +87,36 @@ def split_script(text: str, max_chars: int = _MAX_CHUNK_CHARS) -> list[str]:
     return chunks
 
 
+def _cap_context_length(model: Any, max_seq_len: int) -> None:
+    """Shrink fish-speech's context window from the checkpoint's 32k tokens.
+
+    The window sizes three GPU-resident allocations that never shrink between
+    jobs: the KV cache allocated on first generate (36 layers x 32k ≈ 4.8 GB),
+    a 32k x 32k bool causal mask (1 GB) and the RoPE table. Our chunks (≤400
+    chars plus a ≤30 s reference ≈ 2-3k tokens) never come close, and on a
+    24 GB card that dead weight leaves no headroom for the next job. Must run
+    before the first generate(), which sizes the KV cache from config.
+    """
+    if model.config.max_seq_len <= max_seq_len:
+        return
+    model.config.max_seq_len = max_seq_len
+    # registered (non-persistent) buffers: reassigning updates _buffers
+    model.causal_mask = model.causal_mask[:max_seq_len, :max_seq_len].clone()
+    model.freqs_cis = model.freqs_cis[:max_seq_len].clone()
+    log.info("S2 context window capped", extra={"max_seq_len": max_seq_len})
+
+
 class S2Pipeline(ManagedPipeline):
     def __init__(
         self,
         checkpoint_dir: Path,
         *,
         offload_policy: OffloadPolicy,
-        vram_estimate_gb: float = 10.0,
-        vram_peak_gb: float = 13.0,
+        max_seq_len: int = 8192,
+        # Resident = ~9 GB bf16 weights + codec + KV cache sized by max_seq_len
+        # (~1.2 GB at 8k); peak adds per-chunk activations and codec decode.
+        vram_estimate_gb: float = 11.5,
+        vram_peak_gb: float = 14.0,
     ) -> None:
         super().__init__(
             "s2",
@@ -103,6 +125,7 @@ class S2Pipeline(ManagedPipeline):
             offload_policy=offload_policy,
         )
         self._checkpoint_dir = checkpoint_dir
+        self._max_seq_len = max_seq_len
         self._text2semantic: Any = None
         self._decode_one_token: Any = None
         self._decoder: Any = None
@@ -155,6 +178,7 @@ class S2Pipeline(ManagedPipeline):
             precision=precision,
             compile=False,
         )
+        _cap_context_length(self._text2semantic, self._max_seq_len)
         self._decoder = load_decoder(
             config_name="modded_dac_vq",
             checkpoint_path=str(self._checkpoint_dir / "codec.pth"),
@@ -239,7 +263,7 @@ class S2Pipeline(ManagedPipeline):
         sf.write(str(out_path), waveform, _OUTPUT_SAMPLE_RATE, subtype="PCM_16")
         log.info(
             "speech synthesized",
-            extra={"chunks": len(chunks), "duration_s": round(len(waveform) / _OUTPUT_SAMPLE_RATE, 1)},
+            extra={"chunks": len(plan), "duration_s": round(len(waveform) / _OUTPUT_SAMPLE_RATE, 1)},
         )
         return out_path
 

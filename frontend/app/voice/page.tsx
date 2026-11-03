@@ -79,7 +79,7 @@ export default function VoicePage() {
         // only narration jobs here — lip-sync videos live on the Video tab
         filterJobs={onlyVoiceOvers}
         emptyTitle="Voice Over Studio"
-        emptyHint="Write your narration below — an S2 Pro voice clone reads it exactly as written. Punctuation drives the pacing, and [pause] inserts real silence."
+        emptyHint="Write your narration below — an S2 Pro voice clone reads it exactly as written. Punctuation drives the pacing, [pause] inserts real silence, and tags like [excited] or [whisper] direct the delivery."
       />
 
       <StudioComposer>

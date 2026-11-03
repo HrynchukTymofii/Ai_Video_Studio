@@ -42,7 +42,11 @@ log = logging.getLogger(__name__)
 
 def build_model_manager(settings: Settings) -> ModelManager:
     pipelines = [
-        S2Pipeline(settings.models_dir / "s2-pro", offload_policy=settings.s2_offload),
+        S2Pipeline(
+            settings.models_dir / "s2-pro",
+            offload_policy=settings.s2_offload,
+            max_seq_len=settings.s2_max_seq_len,
+        ),
         MuseTalkPipeline(
             settings.models_dir / "musetalk", offload_policy=settings.musetalk_offload
         ),

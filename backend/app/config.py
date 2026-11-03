@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # flow needs Wan (~24 GB) in RAM at the same moment S2 is evicted, and the
     # pair swap-froze the 64 GB host. Reload from warm page cache is <1 min.
     s2_offload: OffloadPolicy = "unload"
+    # fish-speech context window (checkpoint default 32k). Sizes the resident KV
+    # cache + causal mask; 8k is ample for our ≤400-char chunks.
+    s2_max_seq_len: int = 8192
     musetalk_offload: OffloadPolicy = "cpu"
     wan_offload: OffloadPolicy = "cpu"
     # Real-ESRGAN is ~100 MB total — parking it in RAM is free.

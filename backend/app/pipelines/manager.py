@@ -93,6 +93,9 @@ class ModelManager:
             if pipeline.state is PipelineState.UNLOADED:
                 await self._transition(pipeline, "load", PipelineState.ON_CPU, reason="first use")
             await self._ensure_headroom(pipeline)
+            if pipeline.state is PipelineState.UNLOADED:
+                # the headroom pass self-evicted an "unload"-policy target
+                await self._transition(pipeline, "load", PipelineState.ON_CPU, reason="reload")
             if pipeline.state is not PipelineState.ON_GPU:
                 await self._transition(pipeline, "to_gpu", PipelineState.ON_GPU, reason="acquired")
             pipeline.last_used_at = time.monotonic()
@@ -115,9 +118,9 @@ class ModelManager:
         OOM offload every resident pipeline so the next job starts clean."""
         async with self._lock:
             self._clear_cache()
-            if not is_cuda_oom(exc):
+            if not (is_cuda_oom(exc) or isinstance(exc, InsufficientVRAMError)):
                 return
-            log.warning("CUDA OOM detected — offloading all resident pipelines")
+            log.warning("GPU memory exhausted — offloading all resident pipelines")
             for pipeline in self._pipelines.values():
                 if pipeline.state is PipelineState.ON_GPU:
                     await self._evict(pipeline, reason="post-oom cleanup")
@@ -140,6 +143,13 @@ class ModelManager:
                 self._clear_cache()
                 if self._probe() >= self._needed_free_gb(target):
                     return
+                if target.state is PipelineState.ON_GPU:
+                    # The resident target holds more than its estimate (KV
+                    # caches, fragmentation, leaked activations). Refusing here
+                    # would fail every later job until a restart, so evict the
+                    # target itself and bring it back fresh.
+                    await self._evict(target, reason="self-evict: resident footprint over estimate")
+                    continue
                 raise InsufficientVRAMError(
                     f"pipeline {target.name!r} needs "
                     f"{self._needed_free_gb(target):.1f} GB free VRAM but only "
